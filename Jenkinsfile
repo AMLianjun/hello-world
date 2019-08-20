@@ -1,15 +1,34 @@
 pipeline {
     agent { docker { image 'maven:3.3.3' } }
+    options {
+        skipStagesAfterUnstable()
+    }
+    environment {
+        DISABLE_AUTH = 'true'
+        DB_ENGINE    = 'sqlite'
+    }
     stages {
         stage('build') {
             steps {
                 sh 'mvn --version'
+                sh 'echo $DB_ENGINE'
+                echo "DISABLE_AUTH"
 
                 timeout(time: 5, unit: 'SECONDS') {
                     retry(2) {
                         sh 'echo "hello"'
                     }
                 }
+            }
+        }
+        stage('Test') {
+            steps {
+                echo 'Testing'
+            }
+        }
+        stage('Deploy') {
+            steps {
+                echo 'Deploying'
             }
         }
     }
@@ -19,6 +38,9 @@ pipeline {
         }
         success {
             echo 'This will run only if successful'
+            mail to: 'lianjun.zhao@tr.com',
+                subject: "Failed Pipeline: ${currentBuild.fullDisplayName}",
+                body: "Something is wrong with ${env.BUILD_URL}"
         }
         failure {
             echo 'This will run only if failed'
