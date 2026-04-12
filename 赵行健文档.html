@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>烷烃分子球棍模型</title>
+    <!-- 改用兼容更广泛的Three.js版本和写法 -->
+    <!--script src="https://cdn.bootcdn.net/ajax/libs/three.js/r128/three.min.js"></script-->
+    <script src="./three2.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Microsoft YaHei', sans-serif;
+        }
+
+        body {
+            background: linear-gradient(135deg, #1a1a2e, #16213e);
+            overflow: hidden;
+            color: white;
+        }
+
+        #container {
+            width: 100vw;
+            height: 100vh;
+            display: block;
+        }
+
+        .control-panel {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px 25px;
+            border-radius: 12px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+            z-index: 100;
+            display: flex;
+            gap: 15px;
+            align-items: center;
+        }
+
+        .control-panel h3 {
+            font-size: 18px;
+            margin-right: 10px;
+            font-weight: 500;
+        }
+
+        .model-btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            background: #0f3460;
+            color: white;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .model-btn:hover {
+            background: #1a508b;
+            transform: translateY(-2px);
+        }
+
+        .model-btn.active {
+            background: #e94560;
+        }
+
+        .switch-btn {
+            padding: 8px 12px;
+            border: none;
+            border-radius: 6px;
+            background: #3c415c;
+            color: white;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .switch-btn:hover {
+            background: #5c6380;
+        }
+
+        .info {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.6);
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-size: 14px;
+            text-align: center;
+        }
+
+        .info span {
+            color: #00d4ff;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div id="container"></div>
+
+    <div class="control-panel">
+        <h3>烷烃模型：</h3>
+        <button class="model-btn active" data-model="methane">甲烷(CH₄)</button>
+        <button class="model-btn" data-model="ethane">乙烷(C₂H₆)</button>
+        <button class="model-btn" data-model="propane">丙烷(C₃H₈)</button>
+        <button class="model-btn" data-model="butane">正丁烷(C₄H₁₀)</button>
+        <button class="switch-btn" id="autoRotate">开启自动旋转</button>
+    </div>
+
+    <div class="info">
+        当前模型：<span id="currentModel">甲烷(CH₄)</span> | 鼠标拖拽旋转 / 滚轮缩放
+    </div>
+
+    <script>
+        // 兼容旧浏览器的OrbitControls实现（内联版本，避免外部加载失败）
+        (function () {
+            THREE.OrbitControls = function (object, domElement) {
+                this.object = object;
+                this.domElement = (domElement !== undefined) ? domElement : document;
+
+                this.enabled = true;
+                this.target = new THREE.Vector3();
+                this.minDistance = 5;
+                this.maxDistance = 20;
+
+                var scope = this;
+                var rotateStart = new THREE.Vector2();
+                var rotateEnd = new THREE.Vector2();
+                var rotateDelta = new THREE.Vector2();
+                var spherical = new THREE.Spherical();
+                var sphericalDelta = new THREE.Spherical();
+                var scale = 1;
+
+                function onMouseDown(event) {
+                    if (!scope.enabled) return;
+                    event.preventDefault();
+                    rotateStart.set(event.clientX, event.clientY);
+                    scope.domElement.addEventListener('mousemove', onMouseMove, false);
+                    scope.domElement.addEventListener('mouseup', onMouseUp, false);
+                }
+
+                function onMouseMove(event) {
+                    if (!scope.enabled) return;
+                    event.preventDefault();
+                    rotateEnd.set(event.clientX, event.clientY);
+                    rotateDelta.subVectors(rotateEnd, rotateStart).multiplyScalar(0.005);
+                    sphericalDelta.theta -= rotateDelta.x;
+                    sphericalDelta.phi -= rotateDelta.y;
+                    rotateStart.copy(rotateEnd);
+                    update();
+                }
+
+                function onMouseUp() {
+                    scope.domElement.removeEventListener('mousemove', onMouseMove, false);
+                    scope.domElement.removeEventListener('mouseup', onMouseUp, false);
+                }
+
+                function onMouseWheel(event) {
+                    if (!scope.enabled) return;
+                    event.preventDefault();
+                    scale -= event.deltaY * 0.001;
+                    scale = Math.max(0.1, Math.min(2, scale));
+                    update();
+                }
+
+                function update() {
+                    var offset = new THREE.Vector3();
+                    offset.copy(scope.object.position).sub(scope.target);
+                    spherical.setFromVector3(offset);
+                    spherical.theta += sphericalDelta.theta;
+                    spherical.phi += sphericalDelta.phi;
+                    spherical.phi = Math.max(0.1, Math.min(Math.PI - 0.1, spherical.phi));
+                    spherical.radius *= scale;
+                    spherical.radius = Math.max(scope.minDistance, Math.min(scope.maxDistance, spherical.radius));
+                    offset.setFromSpherical(spherical);
+                    scope.object.position.copy(scope.target).add(offset);
+                    scope.object.lookAt(scope.target);
+                    sphericalDelta.set(0, 0, 0);
+                    scale = 1;
+                }
+
+                scope.domElement.addEventListener('mousedown', onMouseDown, false);
+                scope.domElement.addEventListener('wheel', onMouseWheel, false);
+
+                this.dispose = function () {
+                    scope.domElement.removeEventListener('mousedown', onMouseDown, false);
+                    scope.domElement.removeEventListener('wheel', onMouseWheel, false);
+                };
+            };
+        })();
+
+        // 场景初始化
+        const scene = new THREE.Scene();
+        const container = document.getElementById('container');
+        const camera = new THREE.PerspectiveCamera(60, container.clientWidth / container.clientHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(container.clientWidth, container.clientHeight);
+        container.appendChild(renderer.domElement);
+
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.minDistance = 5;
+        controls.maxDistance = 20;
+
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        scene.add(ambientLight);
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        directionalLight.position.set(10, 10, 5);
+        scene.add(directionalLight);
+
+        const ATOM = {
+            C: { radius: 0.35, color: 0x2c3e50 },
+            H: { radius: 0.25, color: 0xecf0f1 }
+        };
+        const BOND = { radius: 0.08, color: 0x7f8c8d };
+
+        let currentMolecule = null;
+        let autoRotate = false;
+        const currentModelSpan = document.getElementById('currentModel');
+
+        function createAtom(type, x, y, z) {
+            const geometry = new THREE.SphereGeometry(ATOM[type].radius, 32, 32);
+            const material = new THREE.MeshLambertMaterial({ color: ATOM[type].color });
+            const atom = new THREE.Mesh(geometry, material);
+            atom.position.set(x, y, z);
+            return atom;
+        }
+
+        function createBond(start, end) {
+            const direction = new THREE.Vector3().subVectors(end, start);
+            const length = direction.length();
+            const geometry = new THREE.CylinderGeometry(BOND.radius, BOND.radius, length, 16);
+            const material = new THREE.MeshLambertMaterial({ color: BOND.color });
+            const bond = new THREE.Mesh(geometry, material);
+            bond.position.copy(new THREE.Vector3().addVectors(start, end).multiplyScalar(0.5));
+            bond.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.normalize());
+            return bond;
+        }
+
+        function createMethane() {
+            const group = new THREE.Group();
+            const c = createAtom('C', 0, 0, 0);
+            group.add(c);
+            const hPositions = [[1, 1, 1], [-1, -1, 1], [-1, 1, -1], [1, -1, -1]];
+            hPositions.forEach(pos => {
+                const h = createAtom('H', ...pos);
+                group.add(h);
+                group.add(createBond(c.position, h.position));
+            });
+            return group;
+        }
+
+        function createEthane() {
+            const group = new THREE.Group();
+            const c1 = createAtom('C', -0.77, 0, 0);
+            const c2 = createAtom('C', 0.77, 0, 0);
+            group.add(c1, c2);
+            group.add(createBond(c1.position, c2.position));
+            const h1 = [[-0.77, 1.0, 0], [-0.77, -0.5, 0.87], [-0.77, -0.5, -0.87]];
+            const h2 = [[0.77, -1.0, 0], [0.77, 0.5, 0.87], [0.77, 0.5, -0.87]];
+            [...h1, ...h2].forEach(pos => {
+                const h = createAtom('H', ...pos);
+                group.add(h);
+                group.add(createBond(pos[0] < 0 ? c1.position : c2.position, h.position));
+            });
+            return group;
+        }
+
+        function createPropane() {
+            const group = new THREE.Group();
+            const c1 = createAtom('C', -1.54, 0, 0);
+            const c2 = createAtom('C', 0, 0, 0);
+            const c3 = createAtom('C', 1.54, 0, 0);
+            group.add(c1, c2, c3);
+            group.add(createBond(c1.position, c2.position), createBond(c2.position, c3.position));
+            const hPositions = [
+                [-1.54, 1, 0], [-1.54, -0.5, 0.87], [-1.54, -0.5, -0.87],
+                [0, 1, 0.87], [0, 1, -0.87],
+                [1.54, -1, 0], [1.54, 0.5, 0.87], [1.54, 0.5, -0.87]
+            ];
+            hPositions.forEach(pos => {
+                const h = createAtom('H', ...pos);
+                group.add(h);
+                const c = pos[0] < -0.77 ? c1 : (pos[0] > 0.77 ? c3 : c2);
+                group.add(createBond(c.position, h.position));
+            });
+            return group;
+        }
+
+        function createButane() {
+            const group = new THREE.Group();
+            const c1 = createAtom('C', -2.31, 0, 0);
+            const c2 = createAtom('C', -0.77, 0, 0);
+            const c3 = createAtom('C', 0.77, 0, 0);
+            const c4 = createAtom('C', 2.31, 0, 0);
+            group.add(c1, c2, c3, c4);
+            group.add(createBond(c1.position, c2.position), createBond(c2.position, c3.position), createBond(c3.position, c4.position));
+            const hPositions = [
+                [-2.31, 1, 0], [-2.31, -0.5, 0.87], [-2.31, -0.5, -0.87],
+                [-0.77, 1, 0.87], [-0.77, 1, -0.87],
+                [0.77, 1, 0.87], [0.77, 1, -0.87],
+                [2.31, -1, 0], [2.31, 0.5, 0.87], [2.31, 0.5, -0.87]
+            ];
+            hPositions.forEach(pos => {
+                const h = createAtom('H', ...pos);
+                group.add(h);
+                let c;
+                if (pos[0] < -1.54) c = c1;
+                else if (pos[0] < 0) c = c2;
+                else if (pos[0] < 1.54) c = c3;
+                else c = c4;
+                group.add(createBond(c.position, h.position));
+            });
+            return group;
+        }
+
+        function loadMolecule(modelName) {
+            if (currentMolecule) scene.remove(currentMolecule);
+            switch (modelName) {
+                case 'methane': currentMolecule = createMethane(); break;
+                case 'ethane': currentMolecule = createEthane(); break;
+                case 'propane': currentMolecule = createPropane(); break;
+                case 'butane': currentMolecule = createButane(); break;
+            }
+            scene.add(currentMolecule);
+            currentModelSpan.textContent = document.querySelector(`[data-model="${modelName}"]`).textContent;
+        }
+
+        loadMolecule('methane');
+        camera.position.z = 8;
+
+        document.querySelectorAll('.model-btn').forEach(btn => {
+            btn.addEventListener('click', function () {
+                document.querySelectorAll('.model-btn').forEach(b => b.classList.remove('active'));
+                this.classList.add('active');
+                loadMolecule(this.dataset.model);
+            });
+        });
+
+        const rotateBtn = document.getElementById('autoRotate');
+        rotateBtn.addEventListener('click', function () {
+            autoRotate = !autoRotate;
+            this.textContent = autoRotate ? '关闭自动旋转' : '开启自动旋转';
+        });
+
+        window.addEventListener('resize', function () {
+            camera.aspect = container.clientWidth / container.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(container.clientWidth, container.clientHeight);
+        });
+
+        function animate() {
+            requestAnimationFrame(animate);
+            if (autoRotate && currentMolecule) {
+                currentMolecule.rotation.y += 0.005;
+                currentMolecule.rotation.x += 0.002;
+            }
+            renderer.render(scene, camera);
+        }
+        animate();
+    </script>
+</body>
+</html>
